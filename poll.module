@@ -5,14 +5,10 @@
  * Used to aggregate syndicated content (RSS, RDF, and Atom).
  */
 
-use Drupal\poll\PollInterface;
-use Drupal\Component\Utility\Xss;
 use Drupal\poll\Entity\Poll;
-use Drupal\field\Field;
 use Drupal\Component\Utility\String;
 use Drupal\Core\Template\Attribute;
-use Drupal\poll\PollStorageInterface;
-use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Routing\RouteMatchInterface;
 
 /**
  * Denotes that the poll is not published.
@@ -23,6 +19,25 @@ const POLL_NOT_PUBLISHED = 0;
  * Denotes that the poll is published.
  */
 const POLL_PUBLISHED = 1;
+
+/**
+ * Implements hook_help().
+ */
+function poll_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    case 'help.page.poll':
+      $output = '<h3>' . t('About') . '</h3>';
+      $output .= '<p>' . t('The Poll module can be used to create simple surveys or questionnaires that display cumulative results. A poll is a good way to receive feedback from site users and community members. For more information, see the online handbook entry for the <a href="!poll">Poll module</a>.', array('!poll' => 'https://drupal.org/documentation/modules/poll')) . '</p>';
+      $output .= '<h3>' . t('Uses') . '</h3>';
+      $output .= '<dl>';
+      $output .= '<dt>' . t('Creating a poll') . '</dt>';
+      $output .= '<dd>' . t('Users can create a poll by clicking on <a href="!add-poll">Add a poll</a> on the <a href="!polls">Polls</a> page, and entering the question being posed, the answer choices, and beginning vote counts for each choice. The status (closed or active) and duration (length of time the poll remains active for new votes) can also be specified.', array('!add-poll' => \Drupal::url('poll.poll_add'), '!polls' => \Drupal::url('poll.poll_list'))) . '</dd>';
+      $output .= '<dt>' . t('Viewing polls') . '</dt>';
+      $output .= '<dd>' . t('You can visit the <a href="!polls">Polls</a> page to view all current polls, or alternately enable the <em>Most recent poll</em> block on the <a href="!blocks">Blocks administration page</a>. To vote in or view the results of a specific poll, you can click on the poll itself.', array('!polls' => \Drupal::url('poll.poll_list'), '!blocks' => \Drupal::url('block.admin_display'))) . '</dd>';
+      $output .= '</dl>';
+      return $output;
+  }
+}
 
 /**
  * Implements hook_theme().
@@ -111,8 +126,11 @@ function poll_uri($poll) {
   );
 }
 
+/**
+ * Implements hook_cron().
+ */
 function poll_cron() {
-  //Unpublish expired polls if their $duration isn't "Unlimited"
+  // Unpublish expired polls if their $duration isn't "Unlimited".
   $polls = \Drupal::entityManager()->getStorage('poll')->getExpiredPolls();
   foreach ($polls as $poll) {
     $poll->status->value = 0;
