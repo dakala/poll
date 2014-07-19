@@ -8,7 +8,6 @@
 use Drupal\poll\Entity\Poll;
 use Drupal\Component\Utility\String;
 use Drupal\Core\Template\Attribute;
-use Symfony\Component\HttpFoundation\Request;
 use Drupal\Core\Routing\RouteMatchInterface;
 
 /**
@@ -131,16 +130,11 @@ function poll_uri($poll) {
  * Implements hook_cron().
  */
 function poll_cron() {
-  $nids = db_query('SELECT p.nid FROM {poll} p INNER JOIN {node} n ON p.nid = n.nid WHERE (n.created + p.runtime) < :request_time AND p.active = :active AND p.runtime <> :runtime', array(
-      ':request_time' => REQUEST_TIME,
-      ':active' => 1,
-      ':runtime' => 0
-    ))->fetchCol();
-  if (!empty($nids)) {
-    db_update('poll')
-      ->fields(array('active' => 0))
-      ->condition('nid', $nids)
-      ->execute();
+  // Unpublish expired polls if their $duration isn't "Unlimited".
+  $polls = \Drupal::entityManager()->getStorage('poll')->getExpiredPolls();
+  foreach ($polls as $poll) {
+    $poll->status->value = 0;
+    $poll->save();
   }
 }
 

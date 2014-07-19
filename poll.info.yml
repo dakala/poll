@@ -5,4 +5,5 @@ package: Other
 version: VERSION
 core: 8.x
 dependencies:
+  - options
   - field

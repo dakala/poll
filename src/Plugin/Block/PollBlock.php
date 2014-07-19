@@ -32,7 +32,7 @@ class PollBlock extends BlockBase {
   /**
    * {@inheritdoc}
    */
-  public function access(AccountInterface $account) {
+  protected function blockAccess(AccountInterface $account) {
     return $account->hasPermission('access polls');
   }
 
@@ -49,7 +49,9 @@ class PollBlock extends BlockBase {
         return;
       }
       // @todo: new view mode using ajax
-      return entity_view($poll, 'block');
+      $output = entity_view($poll, 'block');
+      $output['#title'] = $poll->label();
+      return $output;
     }
 
   }
