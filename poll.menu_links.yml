@@ -1,5 +1,0 @@
-poll.admin.overview:
-  title: 'Polls'
-  parent: system.admin_structure
-  description: 'Manage polls for your site.'
-  route_name: poll.poll_list

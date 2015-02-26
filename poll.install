@@ -2,142 +2,13 @@
 
 /**
  * @file
- * Install, update and uninstall functions for the poll module.
+ * Install, update, and uninstall functions for the Poll module.
  */
-use Drupal\Core\Language\Language;
-use Drupal\Core\Field\FieldStorageDefinitionInterface;
-
-/**
- * Implements hook_install().
- */
-function poll_install() {
-  $field = array(
-    'name' => 'field_choice',
-    'entity_type' => 'poll',
-    'module' => 'poll',
-    'type' => 'poll_choice',
-    'cardinality' => FieldStorageDefinitionInterface::CARDINALITY_UNLIMITED,
-    'locked' => FALSE,
-  );
-  entity_create('field_config', $field)->save();
-
-  $instance = array(
-    'field_name' => 'field_choice',
-    'entity_type' => 'poll',
-    'label' => 'Choice',
-    'bundle' => 'poll',
-    'description' => t('Enter a poll choice and default vote.'),
-    'required' => FALSE,
-    'settings' => array(
-      'max_length' => 255,
-    ),
-  );
-  entity_create('field_instance_config', $instance)->save();
-
-  // Assign form display settings for the 'default' view mode.
-  entity_get_form_display('poll', 'poll', 'default')
-    ->setComponent('field_choice', array(
-      'type' => 'poll_choice_default',
-      'settings' => array(
-        'size' => '60',
-        'placeholder' => '',
-      ),
-      'weight' => -10,
-    ))
-    ->save();
-}
-
 
 /**
  * Implements hook_schema().
  */
 function poll_schema() {
-  $schema['poll_poll'] = array(
-    'description' => 'Stores poll-specific information for poll entities.',
-    'fields' => array(
-      'id' => array(
-        'type' => 'serial',
-        'not null' => TRUE,
-        'description' => 'Primary Key: Unique poll ID.',
-      ),
-      'uid' => array(
-        'type' => 'int',
-        'not null' => TRUE,
-        'default' => 0,
-        'description' => 'The {user}.id of poll author.',
-      ),
-      'uuid' => array(
-        'description' => 'Unique Key: Universally unique identifier for this entity.',
-        'type' => 'varchar',
-        'length' => 128,
-        'not null' => FALSE,
-      ),
-      'question' => array(
-        'type' => 'varchar',
-        'length' => 255,
-        'not null' => TRUE,
-        'default' => '',
-        'description' => 'The poll question.',
-      ),
-      'langcode' => array(
-        'description' => 'The {language}.langcode of this poll.',
-        'type' => 'varchar',
-        'length' => 12,
-        'not null' => TRUE,
-        'default' => '',
-      ),
-      'runtime' => array(
-        'type' => 'int',
-        'not null' => TRUE,
-        'default' => 0,
-        'description' => 'The number of seconds past {poll}.created during which the poll is open.',
-      ),
-      'anonymous_vote_allow' => array(
-        'type' => 'int',
-        'unsigned' => TRUE,
-        'not null' => TRUE,
-        'default' => 0,
-        'size' => 'tiny',
-        'description' => 'Anonymous users can vote. (0 = No, 1 = Yes)',
-      ),
-      'cancel_vote_allow' => array(
-        'type' => 'int',
-        'unsigned' => TRUE,
-        'not null' => TRUE,
-        'default' => 0,
-        'size' => 'tiny',
-        'description' => 'A user may cancel their vote. (0 = No, 1 = Yes)',
-      ),
-      'result_vote_allow' => array(
-        'type' => 'int',
-        'unsigned' => TRUE,
-        'not null' => TRUE,
-        'default' => 1,
-        'size' => 'tiny',
-        'description' => 'A user may see the results before voting. (0 = No, 1 = Yes)',
-      ),
-      'status' => array(
-        'type' => 'int',
-        'unsigned' => TRUE,
-        'not null' => TRUE,
-        'default' => 1,
-        'size' => 'tiny',
-        'description' => 'The status of a poll. (0 = Not Active, 1 = Active)',
-      ),
-      'created' => array(
-        'type' => 'int',
-        'not null' => TRUE,
-        'default' => 0,
-        'description' => 'When the poll was created, as a Unix timestamp.',
-      ),
-    ),
-    'primary key' => array('id'),
-    'indexes' => array(),
-    'unique keys' => array(
-      'question' => array('question'),
-    ),
-  );
-
   $schema['poll_vote'] = array(
     'description' => 'Stores per-{users} votes for each {poll}.',
     'fields' => array(
@@ -158,7 +29,7 @@ function poll_schema() {
         'unsigned' => TRUE,
         'not null' => TRUE,
         'default' => 0,
-        'description' => 'The {users}.uid this vote is from unless the voter is anonymous.',
+        'description' => 'The {users}.uid this vote is from unless the voter was anonymous.',
       ),
       'hostname' => array(
         'type' => 'varchar',

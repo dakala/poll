@@ -3,14 +3,14 @@
  */
 #}
 <div class="poll">
-    <div class="vote-form">
-        {% if block %}
-            <h3 class="poll-title">{{ title }}</h3>
-        {% endif %}
+  <div class="vote-form">
+    {% if show_question %}
+      <h3 class="poll-question">{{ question }}</h3>
+    {% endif %}
 
-        {{ choice }}
+    {{ choice }}
 
-        {{ vote }}
-    </div>
-    {{ rest }}
+    {{ vote }}
+  </div>
+  {{ rest }}
 </div>

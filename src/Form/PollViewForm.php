@@ -8,10 +8,10 @@
 namespace Drupal\poll\Form;
 
 use Drupal\Core\Form\FormBase;
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Url;
 use Drupal\poll\PollInterface;
 use Drupal\Component\Utility\String;
-use Symfony\Component\DependencyInjection\ContainerInterface;
-use Drupal\Core\Entity\EntityInterface;
 
 /**
  * Displays banned IP addresses.
@@ -25,13 +25,13 @@ class PollViewForm extends FormBase {
     return 'poll_view_form';
   }
 
-  public function buildForm(array $form, array &$form_state, $poll = NULL) {
+  public function buildForm(array $form, FormStateInterface $form_state, $poll = NULL) {
     // Add the poll to the form.
     $form['poll']['#type'] = 'value';
     $form['poll']['#value'] = $poll;
 
     if ($this->showResults($poll, $form_state)) {
-      $form['results']['#markup'] = $this->showPollResults($poll);
+      $form['results'] = $this->showPollResults($poll);
     }
     else {
       $options = $poll->getOptions();
@@ -51,13 +51,17 @@ class PollViewForm extends FormBase {
       $form['#entity'] = $poll;
       // Set form caching because we could have multiple of these forms on
       // the same page, and we want to ensure the right one gets picked.
-      $form_state['cache'] = TRUE;
+      $form_state->setCached(TRUE);
       // Set a flag to hide results which will be removed if we want to view
       // results when the form is rebuilt.
-      $form_state['input']['show_results'] = FALSE;
+      $form_state->set('show_results', FALSE);
     }
 
     $form['actions'] = $this->actions($form, $form_state, $poll);
+
+    $form['#cache'] = array(
+      'tags' => $poll->getCacheTags(),
+    );
 
     return $form;
   }
@@ -65,16 +69,15 @@ class PollViewForm extends FormBase {
   /**
    * {@inheritdoc}
    */
-  public function submitForm(array &$form, array &$form_state) {
-    // Leaving empty
-    $this->save($form, $form_state);
+  public function submitForm(array &$form, FormStateInterface $form_state) {
+
   }
 
-  public function showResults(PollInterface $poll, $form_state) {
+  public function showResults(PollInterface $poll, FormStateInterface $form_state) {
     $account = $this->currentUser();
     switch (TRUE) {
       // The "View results" button, when available, has been clicked.
-      case (isset($form_state['input']) && isset($form_state['input']['show_results']) && $form_state['input']['show_results']):
+      case $form_state->get('show_results'):
         return TRUE;
       // The poll is closed.
       case ($poll->isClosed()):
@@ -90,17 +93,17 @@ class PollViewForm extends FormBase {
     }
   }
 
-  protected function actions(array $form, array &$form_state, $poll) {
+  protected function actions(array $form, FormStateInterface $form_state, $poll) {
     // Remove all actions.
     $actions = array();
     if ($this->showResults($poll, $form_state)) {
       // Allow user to cancel their vote.
-      if ($poll->hasUserVoted() && $poll->getCancelVoteAllow()) {
+      if ($this->isCancelAllowed($poll)) {
         $actions['#type'] = 'actions';
         $actions['cancel']['#type'] = 'submit';
         $actions['cancel']['#button_type'] = 'primary';
         $actions['cancel']['#value'] = t('Cancel vote');
-        $actions['cancel']['#submit'] = array(array($this, 'cancel'));
+        $actions['cancel']['#submit'] = array('::cancel');
         $actions['cancel']['#weight'] = '0';
       }
       if (!$poll->hasUserVoted()) {
@@ -108,7 +111,7 @@ class PollViewForm extends FormBase {
         $actions['back']['#type'] = 'submit';
         $actions['back']['#button_type'] = 'primary';
         $actions['back']['#value'] = t('View poll');
-        $actions['back']['#submit'] = array(array($this, 'back'));
+        $actions['back']['#submit'] = array('::back');
         $actions['back']['#weight'] = '0';
       }
     }
@@ -117,7 +120,8 @@ class PollViewForm extends FormBase {
       $actions['submit']['#type'] = 'submit';
       $actions['submit']['#button_type'] = 'primary';
       $actions['submit']['#value'] = t('Vote');
-//      $actions['submit']['#submit'] = array(array($this, 'save'));
+      $actions['submit']['#validate'] = array('::validateVote');
+      $actions['submit']['#submit'] = array('::save');
       $actions['submit']['#weight'] = '0';
 
       // view results before voting
@@ -125,7 +129,7 @@ class PollViewForm extends FormBase {
         $actions['result']['#type'] = 'submit';
         $actions['result']['#button_type'] = 'primary';
         $actions['result']['#value'] = t('View results');
-        $actions['result']['#submit'] = array(array($this, 'result'));
+        $actions['result']['#submit'] = array('::result');
         $actions['result']['#weight'] = '1';
       }
     }
@@ -136,12 +140,16 @@ class PollViewForm extends FormBase {
   /**
    * Display a themed poll results.
    *
-   * @param $poll
+   * @param \Drupal\poll\PollInterface $poll
    * @param bool $block
    *
    * @return false|string
    */
-  function showPollResults($poll, $block = FALSE) {
+  function showPollResults(PollInterface $poll, $block = FALSE) {
+
+    // Ensure that a page that shows poll results can not be cached.
+    \Drupal::service('page_cache_kill_switch')->trigger();
+
     $total_votes = 0;
     foreach ($poll->votes as $vote) {
       $total_votes += $vote;
@@ -169,17 +177,18 @@ class PollViewForm extends FormBase {
 
     $output = array(
       '#theme' => 'poll_results',
-      '#raw_title' => $poll->label(),
+      '#raw_question' => $poll->label(),
       '#results' => $poll_results,
       '#votes' => $total_votes,
-      '#raw_links' => isset($poll->links) ? $poll->links : array(),
       '#block' => $block,
-      '#nid' => $poll->pid,
-      '#vote' => isset($poll->vote) ? $poll->vote : NULL
+      '#pid' => $poll->id(),
+      '#vote' => isset($poll->vote) ? $poll->vote : NULL,
     );
 
-    return drupal_render($output);
+    return $output;
   }
+
+
 
   /**
    * Cancel vote submit function.
@@ -187,13 +196,18 @@ class PollViewForm extends FormBase {
    * @param array $form
    * @param array $form_state
    */
-  public function cancel(array $form, array &$form_state) {
-    $form_state['redirect_route'] = array(
-      'route_name' => 'poll.poll_vote_delete',
-      'route_parameters' => array(
-        'poll' => $form_state['values']['poll']->id(),
+  public function cancel(array $form, FormStateInterface $form_state) {
+    $form_state->setRedirect('poll.poll_vote_delete', array(
+        'poll' => $form_state->getValue('poll')->id(),
         'user' => \Drupal::currentUser()->id(),
       ),
+      array(
+        'query' => array(
+          // Ensure that the cancel form will redirect back to the current page,
+          // as the poll might be displayed as a block on any page.
+          'destination' => Url::fromRoute('<current>')->getInternalPath(),
+        ),
+      )
     );
   }
 
@@ -203,9 +217,9 @@ class PollViewForm extends FormBase {
    * @param array $form
    * @param array $form_state
    */
-  public function result(array $form, array &$form_state) {
-    $form_state['input']['show_results'] = TRUE;
-    $form_state['rebuild'] = TRUE;
+  public function result(array $form, FormStateInterface $form_state) {
+    $form_state->set('show_results', TRUE);
+    $form_state->setRebuild(TRUE);
   }
 
   /**
@@ -214,9 +228,9 @@ class PollViewForm extends FormBase {
    * @param array $form
    * @param array $form_state
    */
-  public function back(array $form, array &$form_state) {
-    $form_state['input']['show_results'] = FALSE;
-    $form_state['rebuild'] = TRUE;
+  public function back(array $form, FormStateInterface $form_state) {
+    $form_state->set('show_results', FALSE);
+    $form_state->setRebuild(TRUE);
   }
 
   /**
@@ -225,32 +239,69 @@ class PollViewForm extends FormBase {
    * @param array $form
    * @param array $form_state
    */
-  public function save(array $form, array &$form_state) {
+  public function save(array $form, FormStateInterface $form_state) {
+
+    // Check if the user already voted. We do this in save() and not validate
+    // so that the form is considered submitted and displays the result
+    // when built again.
+    if ($form_state->getValue('poll')->hasUserVoted()) {
+      // If this happened, then the form submission was likely a cached page.
+      // Force a session for this user so he can see the results.
+      drupal_set_message($this->t('Your vote for this poll has already been submitted.'), 'error');
+      $_SESSION['poll_vote'][$form_state->getValue('poll')->id()] = FALSE;
+      return;
+    }
+
     $options = array();
-    $options['chid'] = $form_state['values']['choice'];
-    $options['uid'] = \Drupal::currentUser()->id();
-    $options['pid'] = $form_state['values']['poll']->id();
+    $options['chid'] = $form_state->getValue('choice');
+    $options['uid'] = $this->currentUser()->id();
+    $options['pid'] = $form_state->getValue('poll')->id();
     $options['hostname'] = \Drupal::request()->getClientIp();
     $options['timestamp'] = REQUEST_TIME;
-    // save vote
-    $pollStorage = \Drupal::entityManager()->getStorage($form_state['values']['poll']->getId());
-    $pollStorage->saveVote($options);
-    // @todo: confirm vote has been saved.
+    // Save vote.
+    $poll_storage = \Drupal::entityManager()->getStorage('poll');
+    $poll_storage->saveVote($options);
     drupal_set_message($this->t('Your vote has been recorded.'));
 
-    $form_state['redirect'] = $form_state['values']['poll']->url();
+    if ($this->currentUser()->isAnonymous()) {
+      // The vote is recorded so the user gets the result view instead of the
+      // voting form when viewing the poll. Saving a value in $_SESSION has the
+      // convenient side effect of preventing the user from hitting the page
+      // cache. When anonymous voting is allowed, the page cache should only
+      // contain the voting form, not the results.
+      $_SESSION['poll_vote'][$form_state->getValue('poll')->id()] = $form_state->getValue('choice');
+    }
+
+    // No explicit redirect, so that we stay on the current page, which might
+    // be the poll form or another page that is displaying this poll, for
+    // example as a block.
   }
 
   /**
-   * {@inheritdoc}
-   *
+   * Validates the vote action.
    */
-  public function validateForm(array &$form, array &$form_state) {
-    if($form_state['values']['op'] == 'Vote') {
-      if (!isset($form_state['values']['choice']) || $form_state['values']['choice'] == NULL) {
-        $this->setFormError('choice', $form_state, $this->t('Your vote could not be recorded because you did not select any of the choices.'));
-      }
+  public function validateVote(array &$form, FormStateInterface $form_state) {
+    if (!$form_state->hasValue('choice')) {
+      $form_state->setErrorByName('choice', $this->t('Your vote could not be recorded because you did not select any of the choices.'));
     }
+  }
+
+  /**
+   * Checks if the current user is allowed to cancel on the given poll.
+   * @param \Drupal\poll\PollInterface $poll
+   *
+   * @return bool
+   *   TRUE if the user can can cancel.
+   */
+  protected function isCancelAllowed(PollInterface $poll) {
+    // Allow access if the user has voted.
+    return $poll->hasUserVoted()
+      // And the poll allows to cancel votes.
+      && $poll->getCancelVoteAllow()
+      // And the user has the cancel own vote permission.
+      && $this->currentUser()->hasPermission('cancel own vote')
+      // And the user is authenticated or his session contains the voted flag.
+      && (\Drupal::currentUser()->isAuthenticated() || !empty($_SESSION['poll_vote'][$poll->id()]));
   }
 
 

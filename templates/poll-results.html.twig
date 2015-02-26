@@ -19,19 +19,15 @@
  */
 #}
 <div class="poll">
-    {% if block %}
-        <h3 class="poll-title">{{ title }}</h3>
-    {% else %}
-        <h3 class="poll-results-title">{{ results_title }}</h3>
-    {% endif %}
-    <dl>
-        {{ results }}
-    </dl>
-    <div class="total">
-        {{ 'Total votes: '|t }} {{ votes }}
-    </div>
+  {% if show_question %}
+    <h3 class="poll-question">{{ question }}</h3>
+  {% else %}
+    <h3 class="poll-results-title">{{ results_title }}</h3>
+  {% endif %}
+  <dl>
+    {{ results }}
+  </dl>
+  <div class="total">
+    {{ 'Total votes: '|t }} {{ votes }}
+  </div>
 </div>
-
-{% if block %}
-<div class="links"> {{ links }} </div>
-{% endif %}

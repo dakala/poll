@@ -9,8 +9,8 @@ namespace Drupal\poll\Entity;
 
 use Drupal\Core\Entity\ContentEntityBase;
 use Drupal\Core\Entity\EntityTypeInterface;
-use Drupal\Core\Field\FieldDefinition;
-use Symfony\Component\DependencyInjection\Container;
+use Drupal\Core\Field\BaseFieldDefinition;
+use Drupal\Core\Field\FieldStorageDefinitionInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\poll\PollInterface;
 use Drupal\Component\Utility\String;
@@ -22,46 +22,40 @@ use Drupal\user\UserInterface;
  * @ContentEntityType(
  *   id = "poll",
  *   label = @Translation("Poll"),
- *   controllers = {
+ *   handlers = {
+ *     "access" = "\Drupal\poll\PollAccessControlHandler",
  *     "storage" = "Drupal\poll\PollStorage",
+ *     "translation" = "Drupal\content_translation\ContentTranslationHandler",
  *     "list_builder" = "Drupal\poll\PollListBuilder",
  *     "view_builder" = "Drupal\poll\PollViewBuilder",
+ *     "views_data" = "Drupal\views\EntityViewsData",
  *     "form" = {
- *       "default" = "Drupal\poll\PollFormController",
- *       "edit" = "Drupal\poll\PollFormController",
- *       "view" = "Drupal\poll\PollViewFormController",
+ *       "default" = "Drupal\poll\Form\PollForm",
+ *       "edit" = "Drupal\poll\Form\PollForm",
  *       "delete" = "Drupal\poll\Form\PollDeleteForm",
  *       "delete_vote" = "Drupal\poll\Form\PollVoteDeleteForm",
  *       "delete_items" = "Drupal\poll\Form\PollItemsDeleteForm",
  *     }
  *   },
  *   links = {
- *     "canonical" = "poll.poll_view",
- *     "edit-form" = "poll.poll_edit",
- *     "delete-form" = "poll.poll_delete",
- *     "admin-form" = "poll.poll_list"
+ *     "canonical" = "/poll/{poll}",
+ *     "edit-form" = "/poll/{poll}/edit",
+ *     "delete-form" = "/poll/{poll}/delete"
  *   },
- *   base_table = "poll_poll",
- *   fieldable = TRUE,
+ *   base_table = "poll",
+ *   data_table = "poll_field_data",
+ *   admin_permission = "administer polls",
+ *   field_ui_base_route = "poll.poll_list",
+ *   translatable = TRUE,
  *   entity_keys = {
  *     "id" = "id",
  *     "label" = "question",
  *     "uuid" = "uuid",
+ *     "langcode" = "langcode"
  *   }
  * )
  */
 class Poll extends ContentEntityBase implements PollInterface {
-
-  public function getId() {
-    return $this->getEntityType()->id();
-  }
-
-  /**
-   * Implements Drupal\Core\Entity\EntityInterface::label().
-   */
-  public function label() {
-    return $this->get('question')->value;
-  }
 
   /**
    * {@inheritdoc}
@@ -149,16 +143,8 @@ class Poll extends ContentEntityBase implements PollInterface {
   /**
    * {@inheritdoc}
    */
-  public function isActive() {
+  public function isOpen() {
     return (bool) $this->get('status')->value;
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  public function setActive($active) {
-    $this->set('status', $active ? POLL_PUBLISHED : POLL_NOT_PUBLISHED);
-    return $this;
   }
 
   /**
@@ -195,43 +181,70 @@ class Poll extends ContentEntityBase implements PollInterface {
    * {@inheritdoc}
    */
   public function isClosed() {
-    return $this->get('status')->value == 0;
+    return (bool) $this->get('status')->value == 0;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function close() {
+    return $this->set('status', 0);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function open() {
+    return $this->set('status', 1);
   }
 
   /**
    * {@inheritdoc}
    */
   public static function baseFieldDefinitions(EntityTypeInterface $entity_type) {
-    $fields['id'] = FieldDefinition::create('integer')
+    $fields['id'] = BaseFieldDefinition::create('integer')
       ->setLabel(t('Poll ID'))
       ->setDescription(t('The ID of the poll.'))
       ->setReadOnly(TRUE)
       ->setSetting('unsigned', TRUE);
 
-    $fields['uid'] = FieldDefinition::create('entity_reference')
+    $fields['uid'] = BaseFieldDefinition::create('entity_reference')
       ->setLabel(t('User ID'))
       ->setDescription(t('The user ID of the poll author.'))
       ->setSetting('target_type', 'user')
-      ->setSetting('default_value', 0);
+      ->setTranslatable(TRUE)
+      ->setDefaultValueCallback('Drupal\poll\Entity\Poll::getCurrentUserId');
 
-    $fields['uuid'] = FieldDefinition::create('uuid')
+    $fields['uuid'] = BaseFieldDefinition::create('uuid')
       ->setLabel(t('UUID'))
       ->setDescription(t('The poll UUID.'))
       ->setReadOnly(TRUE);
 
-    $fields['question'] = FieldDefinition::create('string')
+    $fields['question'] = BaseFieldDefinition::create('string')
       ->setLabel(t('Question'))
       ->setDescription(t('The poll question.'))
       ->setRequired(TRUE)
+      ->setTranslatable(TRUE)
       ->setSetting('max_length', 255)
       ->setDisplayOptions('form', array(
-        'type' => 'string',
+        'type' => 'string_textfield',
         'weight' => -100,
       ));
 
-    $fields['langcode'] = FieldDefinition::create('language')
+    $fields['langcode'] = BaseFieldDefinition::create('language')
       ->setLabel(t('Language code'))
       ->setDescription(t('The poll language code.'));
+
+    $fields['choice'] = BaseFieldDefinition::create('poll_choice')
+      ->setLabel(t('Choice'))
+      ->setDescription(t('Enter a poll choice and default vote.'))
+      ->setCardinality(FieldStorageDefinitionInterface::CARDINALITY_UNLIMITED)
+      ->setSetting('max_length', 255)
+      ->setDisplayOptions('form', [
+        'type' => 'poll_choice_default',
+        'settings' => [],
+        'weight' => -10,
+      ]);
 
     // Poll attributes
     $duration = array(
@@ -256,63 +269,82 @@ class Poll extends ContentEntityBase implements PollInterface {
       31536000,
     );
 
-    $period = array(0 => t('Unlimited')) + array_map('format_interval', array_combine($duration, $duration));
+    $period = array(0 => t('Unlimited')) + array_map(array(\Drupal::service('date.formatter'), 'formatInterval'), array_combine($duration, $duration));
 
-    $fields['runtime'] = FieldDefinition::create('list_integer')
+    $fields['runtime'] = BaseFieldDefinition::create('list_integer')
       ->setLabel(t('Runtime'))
       ->setDescription(t('The number of seconds after creation during which the poll is active.'))
       ->setSetting('unsigned', TRUE)
       ->setRequired(TRUE)
       ->setSetting('allowed_values', $period)
+      ->setDefaultValue(0)
       ->setDisplayOptions('form', array(
         'type' => 'options_select',
         'weight' => 0,
       ));
 
-    $fields['anonymous_vote_allow'] = FieldDefinition::create('list_integer')
+    $fields['anonymous_vote_allow'] = BaseFieldDefinition::create('list_integer')
       ->setLabel(t('Allow anonymous votes'))
       ->setDescription(t('A flag indicating whether anonymous users are allowed to vote.'))
       ->setSetting('unsigned', TRUE)
+      ->setRequired(TRUE)
       ->setSetting('allowed_values', array(0 => t('No'), 1 => t('Yes')))
+      ->setDefaultValue(0)
       ->setDisplayOptions('form', array(
         'type' => 'options_select',
         'weight' => 1,
       ));
 
-    $fields['cancel_vote_allow'] = FieldDefinition::create('list_integer')
+    $fields['cancel_vote_allow'] = BaseFieldDefinition::create('list_integer')
       ->setLabel(t('Allow cancel votes'))
       ->setDescription(t('A flag indicating whether users may cancel their vote.'))
       ->setSetting('allowed_values', array(0 => t('No'), 1 => t('Yes')))
+      ->setDefaultValue(1)
+      ->setRequired(TRUE)
       ->setDisplayOptions('form', array(
         'type' => 'options_select',
         'weight' => 2,
       ));
 
-    $fields['result_vote_allow'] = FieldDefinition::create('list_integer')
+    $fields['result_vote_allow'] = BaseFieldDefinition::create('list_integer')
       ->setLabel(t('Allow view results'))
       ->setDescription(t('A flag indicating whether users may see the results before voting.'))
       ->setSetting('allowed_values', array(0 => t('No'), 1 => t('Yes')))
+      ->setDefaultValue(0)
+      ->setRequired(TRUE)
       ->setDisplayOptions('form', array(
         'type' => 'options_select',
         'weight' => 3,
       ));
 
-    $fields['status'] = FieldDefinition::create('list_integer')
+    $fields['status'] = BaseFieldDefinition::create('list_integer')
       ->setLabel(t('Active?'))
       ->setDescription(t('A flag indicating whether the poll is active.'))
       ->setSetting('allowed_values', array(0 => t('No'), 1 => t('Yes')))
+      ->setRequired(TRUE)
+      ->setDefaultValue(1)
       ->setDisplayOptions('form', array(
         'type' => 'options_select',
         'weight' => 4,
       ));
 
-    // This is updated by the fetcher and not when the feed is saved, therefore
-    // it's a timestamp and not a changed field.
-    $fields['created'] = FieldDefinition::create('timestamp')
+    $fields['created'] = BaseFieldDefinition::create('created')
       ->setLabel(t('Created'))
       ->setDescription(t('When the poll was created, as a Unix timestamp.'));
 
     return $fields;
+  }
+
+  /**
+   * Default value callback for 'uid' base field definition.
+   *
+   * @see ::baseFieldDefinitions()
+   *
+   * @return array
+   *   An array of default values.
+   */
+  public static function getCurrentUserId() {
+    return array(\Drupal::currentUser()->id());
   }
 
   /**
@@ -341,8 +373,8 @@ class Poll extends ContentEntityBase implements PollInterface {
    */
   public function getOptions() {
     $options = array();
-    if (count($this->field_choice)) {
-      foreach ($this->field_choice as $option) {
+    if (count($this->choice)) {
+      foreach ($this->choice as $option) {
         $options[$option->chid] = String::checkPlain($option->choice);
       }
     }
@@ -356,8 +388,8 @@ class Poll extends ContentEntityBase implements PollInterface {
    */
   public function getOptionValues() {
     $options = array();
-    if (count($this->field_choice)) {
-      foreach ($this->field_choice as $option) {
+    if (count($this->choice)) {
+      foreach ($this->choice as $option) {
         $options[$option->chid] = $option->vote;
       }
     }
@@ -382,16 +414,6 @@ class Poll extends ContentEntityBase implements PollInterface {
     foreach ($entities as $entity) {
       $storage->deleteVotes($entity);
     }
-  }
-
-  /**
-   * Remove 'entity/' from the generted uri for this entity.
-   *
-   * @return mixed
-   */
-  public function normaliseUri() {
-    $uri = $this->uri();
-    return str_replace('entity/', '', $uri);
   }
 
 }

@@ -14,8 +14,6 @@ use Drupal\Core\Entity\ContentEntityInterface;
  */
 interface PollInterface extends ContentEntityInterface {
 
-  public function getId();
-
   /**
    * Sets the question for the poll.
    *
@@ -126,26 +124,30 @@ interface PollInterface extends ContentEntityInterface {
   public function setResultVoteAllow($result_vote_allow);
 
   /**
-   * Returns the node published status indicator.
-   *
-   * Unpublished nodes are only visible to their authors and to administrators.
+   * Returns if the poll is open.
    *
    * @return bool
-   *   TRUE if the node is published.
+   *   TRUE if the poll is open.
    */
-  public function isActive();
+  public function isOpen();
 
   /**
-   * Sets the published status of a node..
+   * Returns if the poll is closed.
    *
-   * @param bool $published
-   *   TRUE to set this node to published, FALSE to set it to unpublished.
-   *
-   * @return \Drupal\node\NodeInterface
-   *   The called node entity.
+   * @return bool
+   *   TRUE if the poll is closed.
    */
-  public function setActive($active);
+  public function isClosed();
 
+  /**
+   * Sets the poll to closed.
+   */
+  public function close();
+
+  /**
+   * Sets the poll to open.
+   */
+  public function open();
 
   /**
    * @todo: Refactor - doesn't belong here.
@@ -166,14 +168,4 @@ interface PollInterface extends ContentEntityInterface {
    */
   public function getOptionValues();
 
-  /**
-   * Remove 'entity/' from the generted uri for this entity.
-   *
-   * @return mixed
-   */
-  public function normaliseUri();
-
-  public function isClosed();
-
-  public function label();
 }

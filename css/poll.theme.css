@@ -26,9 +26,9 @@
 .poll .vote-form .poll-title {
   font-weight: bold;
 }
-td.poll-chtext {
+.poll-chtext {
   width: 80%;
 }
-td.poll-chvotes .form-text {
+.poll-chvotes .form-text {
   width: 85%;
 }

@@ -7,16 +7,16 @@
 
 namespace Drupal\poll;
 
-use Drupal\Core\Entity\ContentEntityDatabaseStorage;
+use Drupal\Core\Entity\Sql\SqlContentEntityStorage;
 use Drupal\Core\Session\AccountInterface;
 
 /**
  * Controller class for polls.
  *
- * This extends the Drupal\Core\Entity\ContentEntityDatabaseStorage class,
+ * This extends the default content entity storage class,
  * adding required special handling for poll entities.
  */
-class PollStorage extends ContentEntityDatabaseStorage implements PollStorageInterface {
+class PollStorage extends SqlContentEntityStorage implements PollStorageInterface {
 
   /**
    * {@inheritdoc}
@@ -47,12 +47,12 @@ class PollStorage extends ContentEntityDatabaseStorage implements PollStorageInt
         ));
       }
       else {
-        $query = $this->database->query("SELECT * FROM {poll_vote} WHERE pid = :pid AND hostname = :hostname", array(
+        $query = $this->database->query("SELECT * FROM {poll_vote} WHERE pid = :pid AND hostname = :hostname AND uid = 0", array(
           ':pid' => $poll->id(),
-          ':hostname' => Drupal::request()->getClientIp()
+          ':hostname' => \Drupal::request()->getClientIp()
         ));
       }
-      return $query->fetchObject();
+      return $query->fetchAssoc();
     }
     return FALSE;
   }
@@ -123,5 +123,13 @@ class PollStorage extends ContentEntityDatabaseStorage implements PollStorageInt
       ->sort('created', 'DESC')
       ->pager(1);
     return $this->loadMultiple($query->execute());
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getExpiredPolls() {
+    $query = $this->database->query("SELECT id FROM {poll_field_data} WHERE (UNIX_TIMESTAMP() > (created + runtime)) AND status = 1 AND runtime <> 0");
+    return $this->loadMultiple($query->fetchCol());
   }
 }

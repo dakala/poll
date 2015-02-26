@@ -2,7 +2,7 @@
 
 /**
  * @file
- * Used to aggregate syndicated content (RSS, RDF, and Atom).
+ * Collects votes on different topics in the form of multiple choice questions.
  */
 
 use Drupal\poll\Entity\Poll;
@@ -37,6 +37,7 @@ function poll_help($route_name, RouteMatchInterface $route_match) {
       $output .= '<dd>' . t('You can visit the <a href="!polls">Polls</a> page to view all current polls, or alternately enable the <em>Most recent poll</em> block on the <a href="!blocks">Blocks administration page</a>. To vote in or view the results of a specific poll, you can click on the poll itself.', array('!polls' => \Drupal::url('poll.poll_list'), '!blocks' => \Drupal::url('block.admin_display'))) . '</dd>';
       $output .= '</dl>';
       return $output;
+    break;
   }
 }
 
@@ -55,13 +56,13 @@ function poll_theme() {
     'poll_results' => array(
       'template' => 'poll-results',
       'variables' => array(
-        'raw_title' => NULL,
+        'raw_question' => NULL,
         'results' => NULL,
         'votes' => NULL,
-        'raw_links' => NULL,
         'block' => NULL,
-        'nid' => NULL,
-        'vote' => NULL
+        'pid' => NULL,
+        'vote' => NULL,
+        'show_question' => FALSE,
       ),
     ),
     'poll_meter' => array(
@@ -85,37 +86,10 @@ function poll_theme() {
 }
 
 /**
- * Implements hook_permission().
+ *  Implements hook_page_attachments().
  */
-function poll_permission() {
-  return array(
-    'administer polls' => array(
-      'title' => t('Administer polls'),
-    ),
-    'access polls' => array(
-      'title' => t('View polls'),
-    ),
-  );
-}
-
-/**
- * Implements hook_page_build().
- */
-function poll_page_build(&$page) {
+function poll_page_attachments(array &$page) {
   $page['#attached']['library'][] = 'poll/drupal.poll-links';
-}
-
-/**
- * Loads a poll.
- *
- * @param int $id
- *   The poll id.
- *
- * @return \Drupal\poll\PollInterface
- *   An object describing the poll.
- */
-function poll_load($id) {
-  return entity_load('poll', $id);
 }
 
 /**
@@ -131,33 +105,24 @@ function poll_uri($poll) {
  * Implements hook_cron().
  */
 function poll_cron() {
-  $nids = db_query('SELECT p.nid FROM {poll} p INNER JOIN {node} n ON p.nid = n.nid WHERE (n.created + p.runtime) < :request_time AND p.active = :active AND p.runtime <> :runtime', array(
-      ':request_time' => REQUEST_TIME,
-      ':active' => 1,
-      ':runtime' => 0
-    ))->fetchCol();
-  if (!empty($nids)) {
-    db_update('poll')
-      ->fields(array('active' => 0))
-      ->condition('nid', $nids)
-      ->execute();
+  // Close expired polls.
+  $polls = \Drupal::entityManager()->getStorage('poll')->getExpiredPolls();
+  foreach ($polls as $poll) {
+    $poll->close();
+    $poll->save();
   }
 }
 
 /**
- * Implements template_preprocess_HOOK() for poll-vote.tpl.php.
+ * Implements template_preprocess_HOOK() for poll-vote.html.twig.
  */
 function template_preprocess_poll_vote(&$variables) {
   $form = $variables['form'];
-  $variables['title'] = String::checkPlain($form['#entity']->label());
+  $variables['question'] = String::checkPlain($form['#entity']->label());
   $variables['choice'] = drupal_render($form['choice']);
   $variables['vote'] = drupal_render($form['actions']);
   $variables['rest'] = drupal_render_children($form);
-  // @todo:
-  if (isset($form['#block'])) {
-    $variables['block'] = $form['#block'];
-    $variables['theme_hook_suggestions'][] = 'poll_vote__block';
-  }
+  $variables['show_question'] = !empty($form['#show_question']);
 }
 
 /**
@@ -196,14 +161,13 @@ function template_preprocess_poll_meter(&$variables) {
 }
 
 /**
- * Implements template_preprocess_HOOK() for poll-results.tpl.php.
+ * Implements template_preprocess_HOOK() for poll-results.html.twig.
  *
  * @param $variables
  *   An associative array containing:
  *   - raw_title: A string for the title of the poll.
  *   - results: The results of the poll.
  *   - votes: The total results in the poll.
- *   - raw_links: Array containing links in the poll.
  *   - block: A boolean to define if the poll is a block.
  *   - nid: The node ID of the poll.
  *   - vote: The choice number of the current user's vote.
@@ -212,15 +176,10 @@ function template_preprocess_poll_meter(&$variables) {
  *   that the title and the links may be overridden by the theme layer, so they
  *   are left in with a different name for that purpose.
  *
- * @see poll-results.tpl.php
- * @see poll-results--block.tpl.php
+ * @see poll-results.html.twig
  */
 function template_preprocess_poll_results(&$variables) {
-  $links = array(
-    '#theme' => 'links__poll_results',
-    '#links' => $variables['raw_links']
-  );
-  $variables['links'] = drupal_render($links);
-  $variables['title'] = String::checkPlain($variables['raw_title']);
+  $variables['question'] = String::checkPlain($variables['raw_question']);
   $variables['results_title'] = t('Results');
 }
+

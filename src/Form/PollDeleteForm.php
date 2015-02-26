@@ -9,6 +9,7 @@ namespace Drupal\poll\Form;
 
 use Drupal\Core\Entity\ContentEntityConfirmFormBase;
 use Drupal\Core\Url;
+use Drupal\Core\Form\FormStateInterface;
 
 /**
  * Provides a form for deleting a poll.
@@ -32,7 +33,7 @@ class PollDeleteForm extends ContentEntityConfirmFormBase {
   /**
    * {@inheritdoc}
    */
-  public function getCancelRoute() {
+  public function getCancelUrl() {
     return new Url('poll.poll_list');
   }
 
@@ -46,11 +47,11 @@ class PollDeleteForm extends ContentEntityConfirmFormBase {
   /**
    * {@inheritdoc}
    */
-  public function submit(array $form, array &$form_state) {
+  public function submitForm(array &$form, FormStateInterface $form_state) {
     $this->entity->delete();
-    watchdog('poll', 'Poll %poll deleted.', array('%poll' => $this->entity->label()));
+    \Drupal::logger('poll')->notice('Poll %poll deleted.', array('%poll' => $this->entity->label()));
     drupal_set_message($this->t('The poll %poll has been deleted.', array('%poll' => $this->entity->label())));
-    $form_state['redirect_route']['route_name'] = 'poll.poll_list';
+    $form_state->setRedirect('poll.poll_list');
   }
 
 }

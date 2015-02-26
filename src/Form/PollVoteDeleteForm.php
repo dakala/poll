@@ -7,12 +7,18 @@
 
 namespace Drupal\poll\Form;
 
+use Drupal\Core\Cache\Cache;
 use Drupal\Core\Entity\ContentEntityConfirmFormBase;
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\user\Entity\User;
+use Symfony\Component\DependencyInjection\ContainerAwareInterface;
+use Symfony\Component\DependencyInjection\ContainerAwareTrait;
 
 /**
  * Provides a form for deleting a vote.
  */
-class PollVoteDeleteForm extends ContentEntityConfirmFormBase {
+class PollVoteDeleteForm extends ContentEntityConfirmFormBase implements ContainerAwareInterface {
+  use ContainerAwareTrait;
 
   /**
    * {@inheritdoc}
@@ -24,7 +30,7 @@ class PollVoteDeleteForm extends ContentEntityConfirmFormBase {
   /**
    * {@inheritdoc}
    */
-  public function getCancelRoute() {
+  public function getCancelUrl() {
     return $this->entity->urlInfo();
   }
 
@@ -38,31 +44,18 @@ class PollVoteDeleteForm extends ContentEntityConfirmFormBase {
   /**
    * {@inheritdoc}
    */
-  public function buildForm(array $form, array &$form_state) {
-    // Always provide entity id in the same form key as in the entity edit form.
-    $form['uid'] = array('#type' => 'value', '#value' => arg(4));
-    $form = parent::buildForm($form, $form_state);
-    return $form;
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  public function submit(array $form, array &$form_state) {
-    $account = entity_load('user', $form_state['values']['uid']);
-    $pollStorage = \Drupal::entityManager()->getStorage($this->entity->getId());
+  public function submitForm(array &$form, FormStateInterface $form_state) {
+    $uid = $this->container->get('request_stack')->getCurrentRequest()->attributes->get('user');
+    $account = User::load($uid);
+    $pollStorage = \Drupal::entityManager()->getStorage('poll');
     $pollStorage->cancelVote($this->entity, $account);
-    watchdog('poll', '%user\'s vote in Poll #%poll deleted.', array(
+    \Drupal::logger('poll')->notice('%user\'s vote in Poll #%poll deleted.', array(
       '%user' => $account->id(),
-      '%poll' => $this->entity->getId()
+      '%poll' => $this->entity->id()
     ));
-    drupal_set_message($this->t('The vote has been deleted.'));
+    drupal_set_message($this->t('Your vote was cancelled.'));
+
     // Display the original poll.
-    $form_state['redirect_route'] = array(
-      'route_name' => 'poll.poll_view',
-      'route_parameters' => array(
-        'poll' => $this->entity->id(),
-      ),
-    );
+    $form_state->setRedirect('entity.poll.canonical', array('poll' => $this->entity->id()));
   }
 }

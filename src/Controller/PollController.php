@@ -12,29 +12,9 @@ use Drupal\Core\Controller\ControllerBase;
 use Drupal\poll\PollInterface;
 
 /**
- * Returns responses for aggregator module routes.
+ * Returns responses for poll module routes.
  */
 class PollController extends ControllerBase {
-
-  /**
-   * Presents the poll creation form.
-   *
-   * @return array
-   *   A form array as expected by drupal_render().
-   */
-  public function pollAdd() {
-    $account = $this->currentUser();
-    $poll = $this->entityManager()->getStorage('poll')
-      ->create(array(
-        'uid' => $account->id(),
-        'runtime' => 0,
-        'anonymous_vote_allow' => 0,
-        'cancel_vote_allow' => 0,
-        'result_vote_allow' => 0,
-        'status' => 1,
-      ));
-    return $this->entityFormBuilder()->getForm($poll);
-  }
 
   /**
    * Route title callback.
@@ -47,11 +27,6 @@ class PollController extends ControllerBase {
    */
   public function pollTitle(PollInterface $poll) {
     return Xss::filter($poll->label());
-  }
-
-  public function viewPoll(PollInterface $poll) {
-    $output = entity_view($poll, 'default');
-    return $output;
   }
 
 }

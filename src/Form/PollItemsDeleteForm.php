@@ -8,6 +8,8 @@
 namespace Drupal\poll\Form;
 
 use Drupal\Core\Entity\ContentEntityConfirmFormBase;
+use Drupal\Core\Url;
+use Drupal\Core\Form\FormStateInterface;
 
 /**
  * Provides a deletion confirmation form for items that belong to a feed.
@@ -24,10 +26,8 @@ class PollItemsDeleteForm extends ContentEntityConfirmFormBase {
   /**
    * {@inheritdoc}
    */
-  public function getCancelRoute() {
-    return array(
-      'route_name' => 'aggregator.admin_overview',
-    );
+  public function getCancelUrl() {
+    return new Url('poll.poll_list');
   }
 
   /**
@@ -40,10 +40,9 @@ class PollItemsDeleteForm extends ContentEntityConfirmFormBase {
   /**
    * {@inheritdoc}
    */
-  public function submit(array $form, array &$form_state) {
+  public function submitForm(array &$form, FormStateInterface $form_state) {
     $this->entity->deleteItems();
-
-    $form_state['redirect_route']['route_name'] = 'aggregator.admin_overview';
+    $form_state->setRedirect('poll.poll_list');
   }
 
 }
